@@ -23,9 +23,12 @@ zune-jpeg = "0.4.17"
 flate2 = "1.0.20"
 zstd = { version = "0.13", optional = true }
 quick-error = "2.0.1"
+itertools = "0.14.0"
 
 [dev-dependencies]
+clap = { version = "4.0.32", features = ["derive"] }
 criterion = "0.3.1"
+kamadak-exif = "0.5.5"
 
 [features]
 zstd = ["dep:zstd"]
