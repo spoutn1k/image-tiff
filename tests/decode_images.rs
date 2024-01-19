@@ -4,6 +4,7 @@ use tiff::decoder::{ifd, Decoder, DecodingResult};
 use tiff::ColorType;
 
 use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 
 const TEST_IMAGE_DIR: &str = "./tests/images/";
@@ -521,4 +522,17 @@ fn test_predictor_3_gray_f32() {
 fn test_zstd_compression() {
     // gdal_translate -co COMPRESS=ZSTD -co ZSTD_LEVEL=20 int16.tif int16_zstd.tif
     test_image_sum_i16("int16_zstd.tif", ColorType::Gray(16), 354396);
+}
+
+#[test]
+fn test_exif_decoding() {
+    let path = PathBuf::from(TEST_IMAGE_DIR).join("exif.tif");
+    let img_file = File::open(path).expect("Cannot find test image!");
+    let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
+    let raw_exif = decoder.read_exif().expect("Unable to read Exif data");
+
+    let mut output = File::create(PathBuf::from(TEST_IMAGE_DIR).join("exif.out"))
+        .expect("Unable to open output file");
+    output.write(&raw_exif).expect("Unable to write output");
+    output.flush().expect("Unable to flush writer");
 }
