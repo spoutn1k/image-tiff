@@ -1,13 +1,12 @@
 use super::ifd::{Directory, Value};
 use super::stream::{ByteOrder, DeflateReader, LZWReader, PackBitsReader};
 use super::tag_reader::TagReader;
-use super::{fp_predict_f32, fp_predict_f64, DecodingBuffer, Limits};
+use super::{predict_f32, predict_f64, Limits};
 use super::{stream::SmartReader, ChunkType};
 use crate::tags::{
     CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat, Tag,
 };
 use crate::{ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
-use std::convert::TryFrom;
 use std::io::{self, Cursor, Read, Seek};
 use std::sync::Arc;
 
@@ -65,9 +64,8 @@ pub(crate) struct Image {
     pub width: u32,
     pub height: u32,
     pub bits_per_sample: u8,
-    #[allow(unused)]
     pub samples: u16,
-    pub sample_format: Vec<SampleFormat>,
+    pub sample_format: SampleFormat,
     pub photometric_interpretation: PhotometricInterpretation,
     pub compression_method: CompressionMethod,
     pub predictor: Predictor,
@@ -155,9 +153,9 @@ impl Image {
                     return Err(TiffUnsupportedError::UnsupportedSampleFormat(sample_format).into());
                 }
 
-                sample_format
+                sample_format[0]
             }
-            None => vec![SampleFormat::Uint],
+            None => SampleFormat::Uint,
         };
 
         let bits_per_sample: Vec<u8> = tag_reader
@@ -172,8 +170,9 @@ impl Image {
             ));
         }
 
-        // This library (and libtiff) do not support mixed sample formats.
-        if bits_per_sample.iter().any(|&b| b != bits_per_sample[0]) {
+        // This library (and libtiff) do not support mixed sample formats and zero bits per sample
+        // doesn't make sense.
+        if bits_per_sample.iter().any(|&b| b != bits_per_sample[0]) || bits_per_sample[0] == 0 {
             return Err(TiffUnsupportedError::InconsistentBitsPerSample(bits_per_sample).into());
         }
 
@@ -285,13 +284,14 @@ impl Image {
                     ));
                 }
             }
-            (false,false,false,false) => { // allow reading Tiff without image data
+            (false, false, false, false) => {
+                // allow reading Tiff without image data
                 chunk_type = ChunkType::None; // the ChunkType will make sure an error is thrown later if trying to read image data
                 strip_decoder = None;
                 tile_attributes = None;
                 chunk_offsets = Vec::new();
                 chunk_bytes = Vec::new();
-            },
+            }
             (_, _, _, _) => {
                 return Err(TiffError::FormatError(
                     TiffFormatError::StripTileTagConflict,
@@ -354,14 +354,19 @@ impl Image {
                     ),
                 )),
             },
-            PhotometricInterpretation::BlackIsZero | PhotometricInterpretation::WhiteIsZero
-                if self.samples == 1 =>
-            {
-                Ok(ColorType::Gray(self.bits_per_sample))
+            PhotometricInterpretation::BlackIsZero | PhotometricInterpretation::WhiteIsZero => {
+                match self.samples {
+                    1 => Ok(ColorType::Gray(self.bits_per_sample)),
+                    _ => Ok(ColorType::Multiband {
+                        bit_depth: self.bits_per_sample,
+                        num_samples: self.samples,
+                    }),
+                }
             }
-
             // TODO: this is bad we should not fail at this point
-            _ => Err(TiffError::UnsupportedError(
+            PhotometricInterpretation::RGBPalette
+            | PhotometricInterpretation::TransparencyMask
+            | PhotometricInterpretation::CIELab => Err(TiffError::UnsupportedError(
                 TiffUnsupportedError::InterpretationWithBits(
                     self.photometric_interpretation,
                     vec![self.bits_per_sample; self.samples as usize],
@@ -559,27 +564,34 @@ impl Image {
     pub(crate) fn expand_chunk(
         &self,
         reader: impl Read,
-        mut buffer: DecodingBuffer,
-        output_width: usize,
+        buf: &mut [u8],
+        output_row_stride: usize,
         byte_order: ByteOrder,
         chunk_index: u32,
         limits: &Limits,
     ) -> TiffResult<()> {
-        // Validate that the provided buffer is of the expected type.
+        // Validate that the color type is supported.
         let color_type = self.colortype()?;
-        match (color_type, &buffer) {
-            (ColorType::RGB(n), _)
-            | (ColorType::RGBA(n), _)
-            | (ColorType::CMYK(n), _)
-            | (ColorType::YCbCr(n), _)
-            | (ColorType::Gray(n), _)
-                if usize::from(n) == buffer.byte_len() * 8 => {}
-            (ColorType::Gray(n), DecodingBuffer::U8(_)) if n < 8 => match self.predictor {
+        match color_type {
+            ColorType::RGB(n)
+            | ColorType::RGBA(n)
+            | ColorType::CMYK(n)
+            | ColorType::YCbCr(n)
+            | ColorType::Gray(n)
+            | ColorType::Multiband {
+                bit_depth: n,
+                num_samples: _,
+            } if n == 8 || n == 16 || n == 32 || n == 64 => {}
+            ColorType::Gray(n)
+            | ColorType::Multiband {
+                bit_depth: n,
+                num_samples: _,
+            } if n < 8 => match self.predictor {
                 Predictor::None => {}
                 Predictor::Horizontal => {
                     return Err(TiffError::UnsupportedError(
                         TiffUnsupportedError::HorizontalPredictor(color_type),
-                    ))
+                    ));
                 }
                 Predictor::FloatingPoint => {
                     return Err(TiffError::UnsupportedError(
@@ -587,23 +599,22 @@ impl Image {
                     ));
                 }
             },
-            (type_, _) => {
+            type_ => {
                 return Err(TiffError::UnsupportedError(
                     TiffUnsupportedError::UnsupportedColorType(type_),
-                ))
+                ));
             }
         }
 
         // Validate that the predictor is supported for the sample type.
-        match (self.predictor, &buffer) {
-            (Predictor::Horizontal, DecodingBuffer::F32(_))
-            | (Predictor::Horizontal, DecodingBuffer::F64(_)) => {
+        match (self.predictor, self.sample_format) {
+            (Predictor::Horizontal, SampleFormat::Int | SampleFormat::Uint) => {}
+            (Predictor::Horizontal, _) => {
                 return Err(TiffError::UnsupportedError(
                     TiffUnsupportedError::HorizontalPredictor(color_type),
                 ));
             }
-            (Predictor::FloatingPoint, DecodingBuffer::F32(_))
-            | (Predictor::FloatingPoint, DecodingBuffer::F64(_)) => {}
+            (Predictor::FloatingPoint, SampleFormat::IEEEFP) => {}
             (Predictor::FloatingPoint, _) => {
                 return Err(TiffError::UnsupportedError(
                     TiffUnsupportedError::FloatingPointPredictor(color_type),
@@ -622,7 +633,6 @@ impl Image {
             return Err(TiffError::LimitsExceeded);
         }
 
-        let byte_len = buffer.byte_len();
         let compression_method = self.compression_method;
         let photometric_interpretation = self.photometric_interpretation;
         let predictor = self.predictor;
@@ -631,7 +641,19 @@ impl Image {
         let chunk_dims = self.chunk_dimensions()?;
         let data_dims = self.chunk_data_dimensions(chunk_index)?;
 
-        let padding_right = chunk_dims.0 - data_dims.0;
+        let chunk_row_bits = (u64::from(chunk_dims.0) * u64::from(self.bits_per_sample))
+            .checked_mul(samples as u64)
+            .ok_or(TiffError::LimitsExceeded)?;
+        let chunk_row_bytes: usize = ((chunk_row_bits + 7) / 8).try_into()?;
+
+        let data_row_bits = (u64::from(data_dims.0) * u64::from(self.bits_per_sample))
+            .checked_mul(samples as u64)
+            .ok_or(TiffError::LimitsExceeded)?;
+        let data_row_bytes: usize = ((data_row_bits + 7) / 8).try_into()?;
+
+        // TODO: Should these return errors instead?
+        assert!(output_row_stride >= data_row_bytes);
+        assert!(buf.len() >= output_row_stride * (data_dims.1 as usize - 1) + data_row_bytes);
 
         let mut reader = Self::create_reader(
             reader,
@@ -641,57 +663,65 @@ impl Image {
             self.jpeg_tables.as_deref().map(|a| &**a),
         )?;
 
-        if output_width == data_dims.0 as usize && padding_right == 0 {
-            let total_samples = data_dims.0 as usize * data_dims.1 as usize * samples;
-            let tile = &mut buffer.as_bytes_mut()[..total_samples * byte_len];
+        if output_row_stride == chunk_row_bytes as usize {
+            let tile = &mut buf[..chunk_row_bytes * data_dims.1 as usize];
             reader.read_exact(tile)?;
 
-            for row in 0..data_dims.1 as usize {
-                let row_start = row * output_width * samples;
-                let row_end = (row + 1) * output_width * samples;
-                let row = buffer.subrange(row_start..row_end);
-                super::fix_endianness_and_predict(row, samples, byte_order, predictor);
+            for row in tile.chunks_mut(chunk_row_bytes as usize) {
+                super::fix_endianness_and_predict(
+                    row,
+                    color_type.bit_depth(),
+                    samples,
+                    byte_order,
+                    predictor,
+                );
             }
             if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                super::invert_colors(&mut buffer.subrange(0..total_samples), color_type);
+                super::invert_colors(tile, color_type, self.sample_format);
             }
-        } else if padding_right > 0 && self.predictor == Predictor::FloatingPoint {
+        } else if chunk_row_bytes > data_row_bytes && self.predictor == Predictor::FloatingPoint {
             // The floating point predictor shuffles the padding bytes into the encoded output, so
             // this case is handled specially when needed.
-            let mut encoded = vec![0u8; chunk_dims.0 as usize * samples * byte_len];
-
-            for row in 0..data_dims.1 as usize {
-                let row_start = row * output_width * samples;
-                let row_end = row_start + data_dims.0 as usize * samples;
-
+            let mut encoded = vec![0u8; chunk_row_bytes];
+            for row in buf.chunks_mut(output_row_stride).take(data_dims.1 as usize) {
                 reader.read_exact(&mut encoded)?;
-                match buffer.subrange(row_start..row_end) {
-                    DecodingBuffer::F32(buf) => fp_predict_f32(&mut encoded, buf, samples),
-                    DecodingBuffer::F64(buf) => fp_predict_f64(&mut encoded, buf, samples),
+
+                let row = &mut row[..data_row_bytes];
+                match color_type.bit_depth() {
+                    32 => predict_f32(&mut encoded, row, samples),
+                    64 => predict_f64(&mut encoded, row, samples),
                     _ => unreachable!(),
                 }
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(&mut buffer.subrange(row_start..row_end), color_type);
+                    super::invert_colors(row, color_type, self.sample_format);
                 }
             }
         } else {
-            for row in 0..data_dims.1 as usize {
-                let row_start = row * output_width * samples;
-                let row_end = row_start + data_dims.0 as usize * samples;
-
-                let row = &mut buffer.as_bytes_mut()[(row_start * byte_len)..(row_end * byte_len)];
+            for (i, row) in buf
+                .chunks_mut(output_row_stride)
+                .take(data_dims.1 as usize)
+                .enumerate()
+            {
+                let row = &mut row[..data_row_bytes];
                 reader.read_exact(row)?;
 
+                println!("chunk={chunk_index}, index={i}");
+
                 // Skip horizontal padding
-                if padding_right > 0 {
-                    let len = u64::try_from(padding_right as usize * samples * byte_len)?;
+                if chunk_row_bytes > data_row_bytes {
+                    let len = u64::try_from(chunk_row_bytes - data_row_bytes)?;
                     io::copy(&mut reader.by_ref().take(len), &mut io::sink())?;
                 }
 
-                let mut row = buffer.subrange(row_start..row_end);
-                super::fix_endianness_and_predict(row.copy(), samples, byte_order, predictor);
+                super::fix_endianness_and_predict(
+                    row,
+                    color_type.bit_depth(),
+                    samples,
+                    byte_order,
+                    predictor,
+                );
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(&mut row, color_type);
+                    super::invert_colors(row, color_type, self.sample_format);
                 }
             }
         }

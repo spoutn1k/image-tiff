@@ -188,7 +188,9 @@ macro_rules! test_roundtrip {
 }
 
 test_roundtrip!(test_u8_roundtrip, U8, u8);
+test_roundtrip!(test_i8_roundtrip, I8, i8);
 test_roundtrip!(test_u16_roundtrip, U16, u16);
+test_roundtrip!(test_i16_roundtrip, I16, i16);
 test_roundtrip!(test_u32_roundtrip, U32, u32);
 test_roundtrip!(test_u64_roundtrip, U64, u64);
 test_roundtrip!(test_f32_roundtrip, F32, f32);
@@ -197,6 +199,11 @@ test_roundtrip!(test_f64_roundtrip, F64, f64);
 #[test]
 fn test_gray_u8_roundtrip() {
     test_u8_roundtrip::<colortype::Gray8>("minisblack-1c-8b.tiff", ColorType::Gray(8));
+}
+
+#[test]
+fn test_gray_i8_roundtrip() {
+    test_i8_roundtrip::<colortype::GrayI8>("minisblack-1c-i8b.tiff", ColorType::Gray(8));
 }
 
 #[test]
@@ -212,6 +219,11 @@ fn test_cmyk_u8_roundtrip() {
 #[test]
 fn test_gray_u16_roundtrip() {
     test_u16_roundtrip::<colortype::Gray16>("minisblack-1c-16b.tiff", ColorType::Gray(16));
+}
+
+#[test]
+fn test_gray_i16_roundtrip() {
+    test_i16_roundtrip::<colortype::GrayI16>("minisblack-1c-i16b.tiff", ColorType::Gray(16));
 }
 
 #[test]
@@ -529,7 +541,7 @@ fn test_rows_per_strip() {
 }
 
 #[test]
-fn test_recode_exif_data () {
+fn test_recode_exif_data() {
     let path = PathBuf::from(TEST_IMAGE_DIR).join("exif.tif");
     let img_file = File::open(path).expect("Cannot find test image!");
     let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
@@ -539,13 +551,19 @@ fn test_recode_exif_data () {
     let mut output = Cursor::new(Vec::new());
     let mut tiff = TiffEncoder::new(&mut output).expect("Unable to create TIFF");
     let (width, heigth) = decoder.dimensions().expect("Unable to read dimension");
-    let mut image = tiff.new_image::<colortype::RGB8>(width,heigth).expect("Unable to create encoder");
-    image.exif_tags(raw_exif).expect("Unable to write Exif data");
+    let mut image = tiff
+        .new_image::<colortype::RGB8>(width, heigth)
+        .expect("Unable to create encoder");
+    image
+        .exif_tags(raw_exif)
+        .expect("Unable to write Exif data");
     if let DecodingResult::U8(vec) = image_data {
-        image.write_data(vec.as_slice()).expect("Unable to write image data");
+        image
+            .write_data(vec.as_slice())
+            .expect("Unable to write image data");
         output.flush().expect("Unable to flush output");
         output.set_position(0);
-        let sum : u64 =  output.into_inner().into_iter().map(u64::from).sum();
+        let sum: u64 = output.into_inner().into_iter().map(u64::from).sum();
         assert_eq!(sum, 64202);
     } else {
         panic!("Wrong data type");

@@ -2,19 +2,18 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
 use std::io::{self, Read, Seek};
 use std::mem;
 use std::str;
 
 use super::stream::{ByteOrder, EndianReader, SmartReader};
+use crate::encoder::TiffValue;
 use crate::tags::{Tag, Type};
 use crate::{TiffError, TiffFormatError, TiffResult};
-use crate::encoder::TiffValue;
 
 use self::Value::{
     Ascii, Byte, Double, Float, Ifd, IfdBig, List, Rational, RationalBig, SRational, SRationalBig,
-    Short, Signed, SignedBig, Unsigned, UnsignedBig,
+    Short, Signed, SignedBig, SignedByte, SignedShort, Unsigned, UnsignedBig,
 };
 
 #[allow(unused_qualifications)]
@@ -23,6 +22,8 @@ use self::Value::{
 pub enum Value {
     Byte(u8),
     Short(u16),
+    SignedByte(i8),
+    SignedShort(i16),
     Signed(i32),
     SignedBig(i64),
     Unsigned(u32),
@@ -46,6 +47,14 @@ impl Value {
             val => Err(TiffError::FormatError(TiffFormatError::ByteExpected(val))),
         }
     }
+    pub fn into_i8(self) -> TiffResult<i8> {
+        match self {
+            SignedByte(val) => Ok(val),
+            val => Err(TiffError::FormatError(TiffFormatError::SignedByteExpected(
+                val,
+            ))),
+        }
+    }
 
     pub fn into_u16(self) -> TiffResult<u16> {
         match self {
@@ -54,6 +63,18 @@ impl Value {
             UnsignedBig(val) => Ok(u16::try_from(val)?),
             val => Err(TiffError::FormatError(
                 TiffFormatError::UnsignedIntegerExpected(val),
+            )),
+        }
+    }
+
+    pub fn into_i16(self) -> TiffResult<i16> {
+        match self {
+            SignedByte(val) => Ok(val.into()),
+            SignedShort(val) => Ok(val),
+            Signed(val) => Ok(i16::try_from(val)?),
+            SignedBig(val) => Ok(i16::try_from(val)?),
+            val => Err(TiffError::FormatError(
+                TiffFormatError::SignedShortExpected(val),
             )),
         }
     }
@@ -73,6 +94,8 @@ impl Value {
 
     pub fn into_i32(self) -> TiffResult<i32> {
         match self {
+            SignedByte(val) => Ok(val.into()),
+            SignedShort(val) => Ok(val.into()),
             Signed(val) => Ok(val),
             SignedBig(val) => Ok(i32::try_from(val)?),
             val => Err(TiffError::FormatError(
@@ -96,6 +119,8 @@ impl Value {
 
     pub fn into_i64(self) -> TiffResult<i64> {
         match self {
+            SignedByte(val) => Ok(val.into()),
+            SignedShort(val) => Ok(val.into()),
             Signed(val) => Ok(val.into()),
             SignedBig(val) => Ok(val),
             val => Err(TiffError::FormatError(
@@ -207,6 +232,8 @@ impl Value {
                 }
                 Ok(new_vec)
             }
+            SignedByte(val) => Ok(vec![val.into()]),
+            SignedShort(val) => Ok(vec![val.into()]),
             Signed(val) => Ok(vec![val]),
             SignedBig(val) => Ok(vec![i32::try_from(val)?]),
             SRational(numerator, denominator) => Ok(vec![numerator, denominator]),
@@ -292,6 +319,8 @@ impl Value {
                 }
                 Ok(new_vec)
             }
+            SignedByte(val) => Ok(vec![val.into()]),
+            SignedShort(val) => Ok(vec![val.into()]),
             Signed(val) => Ok(vec![val.into()]),
             SignedBig(val) => Ok(vec![val]),
             SRational(numerator, denominator) => Ok(vec![numerator.into(), denominator.into()]),
@@ -646,16 +675,22 @@ impl Entry {
     }
 
     /// retrieve entry with data read into a buffer (to cache it for writing)
-    pub fn as_buffered<R: Read+Seek>(&self,
-                       bigtiff: bool,
-                       reader: &mut SmartReader<R> ) -> TiffResult<BufferedEntry> {
+    pub fn as_buffered<R: Read + Seek>(
+        &self,
+        bigtiff: bool,
+        reader: &mut SmartReader<R>,
+    ) -> TiffResult<BufferedEntry> {
         // establish byte order
         let bo = reader.byte_order();
         let native_bo;
         #[cfg(target_endian = "little")]
-        {native_bo = ByteOrder::LittleEndian;}
+        {
+            native_bo = ByteOrder::LittleEndian;
+        }
         #[cfg(not(target_endian = "little"))]
-        {native_bo = ByteOrder::BigEndian;}
+        {
+            native_bo = ByteOrder::BigEndian;
+        }
 
         // establish size
         let tag_size = match self.type_ {
@@ -681,10 +716,20 @@ impl Entry {
         if value_bytes <= 4 || (bigtiff && value_bytes <= 8) {
             self.r(bo).read(&mut buf)?;
 
-            match self.type_ { // for multi-byte values
-                Type::SHORT | Type::SSHORT | Type::LONG | Type::SLONG | Type::FLOAT | Type::IFD
-                | Type::LONG8 | Type::SLONG8 | Type::DOUBLE | Type::IFD8 =>
-                    if native_bo != bo { // if byte-order is non-native
+            match self.type_ {
+                // for multi-byte values
+                Type::SHORT
+                | Type::SSHORT
+                | Type::LONG
+                | Type::SLONG
+                | Type::FLOAT
+                | Type::IFD
+                | Type::LONG8
+                | Type::SLONG8
+                | Type::DOUBLE
+                | Type::IFD8 => {
+                    if native_bo != bo {
+                        // if byte-order is non-native
                         // reverse byte order
                         let mut new_buf = vec![0; value_bytes as usize];
                         for i in 0..value_bytes {
@@ -692,10 +737,11 @@ impl Entry {
                         }
                         buf = new_buf;
                     }
-                _=>{}
+                }
+                _ => {}
             }
-
-        } else { // values that use a pointer
+        } else {
+            // values that use a pointer
             // read pointed data
             if bigtiff {
                 reader.goto_offset(self.r(bo).read_u64()?.into())?;
@@ -704,9 +750,11 @@ impl Entry {
             }
             reader.read_exact(&mut buf)?;
 
-            match self.type_ { // for multi-byte values
-                Type::LONG8 | Type::SLONG8 | Type::DOUBLE  =>
-                    if native_bo != bo { // if byte-order is non-native
+            match self.type_ {
+                // for multi-byte values
+                Type::LONG8 | Type::SLONG8 | Type::DOUBLE => {
+                    if native_bo != bo {
+                        // if byte-order is non-native
                         // reverse byte order
                         let mut new_buf = vec![0; value_bytes as usize];
                         for i in 0..value_bytes {
@@ -714,8 +762,10 @@ impl Entry {
                         }
                         buf = new_buf;
                     }
-                Type::RATIONAL | Type::SRATIONAL =>
-                    if native_bo != bo { // if byte-order is non-native
+                }
+                Type::RATIONAL | Type::SRATIONAL => {
+                    if native_bo != bo {
+                        // if byte-order is non-native
                         // reverse byte order
                         let mut new_buf = vec![0; 8];
                         new_buf[0] = buf[3];
@@ -728,14 +778,15 @@ impl Entry {
                         new_buf[7] = buf[4];
                         buf = new_buf;
                     }
-                _=>{}
+                }
+                _ => {}
             }
         }
 
-        Ok(BufferedEntry{
+        Ok(BufferedEntry {
             type_: self.type_,
             count: self.count.clone(),
-            data: buf
+            data: buf,
         })
     }
 }
