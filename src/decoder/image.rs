@@ -1,12 +1,15 @@
-use super::ifd::{Directory, Value};
 use super::stream::{ByteOrder, DeflateReader, LZWReader, PackBitsReader};
 use super::tag_reader::TagReader;
+use super::DecodedEntry;
 use super::{predict_f32, predict_f64, Limits};
 use super::{stream::SmartReader, ChunkType};
+use crate::ifd::{Directory, Value};
 use crate::tags::{
     CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat, Tag,
 };
-use crate::{ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
+use crate::{
+    ColorType, TiffError, TiffFormatError, TiffKind, TiffResult, TiffUnsupportedError, UsageError,
+};
 use std::io::{self, Cursor, Read, Seek};
 use std::sync::Arc;
 
@@ -59,8 +62,8 @@ impl TileAttributes {
 }
 
 #[derive(Debug)]
-pub(crate) struct Image {
-    pub ifd: Option<Directory>,
+pub(crate) struct Image<K: TiffKind> {
+    pub ifd: Option<Directory<DecodedEntry<K>>>,
     pub width: u32,
     pub height: u32,
     pub bits_per_sample: u8,
@@ -78,18 +81,16 @@ pub(crate) struct Image {
     pub chunk_bytes: Vec<u64>,
 }
 
-impl Image {
+impl<K: TiffKind> Image<K> {
     pub fn from_reader<R: Read + Seek>(
         reader: &mut SmartReader<R>,
-        ifd: Directory,
+        ifd: Directory<DecodedEntry<K>>,
         limits: &Limits,
-        bigtiff: bool,
-    ) -> TiffResult<Image> {
-        let mut tag_reader = TagReader {
+    ) -> TiffResult<Image<K>> {
+        let mut tag_reader = TagReader::<_, K> {
             reader,
             limits,
             ifd: &ifd,
-            bigtiff,
         };
 
         let width = tag_reader.require_tag(Tag::ImageWidth)?.into_u32()?;
