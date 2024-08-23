@@ -2,13 +2,13 @@ extern crate tiff;
 
 use std::io::{Cursor, Seek, Write};
 use tiff::{
-    decoder::{Decoder, DecodingResult},
+    decoder::DecodingResult,
     encoder::{
         colortype::{self, ColorType},
         compression::*,
-        TiffEncoder, TiffValue,
+        TiffValue,
     },
-    TiffKindStandard,
+    TiffDecoder, TiffEncoder, TiffKindStandard,
 };
 
 trait TestImage<const NUM_CHANNELS: usize>: From<Vec<<Self::Color as ColorType>::Inner>> {
@@ -112,7 +112,7 @@ fn encode_decode_with_compression<C: Compression + Clone>(compression: C) {
     // Decode tiff
     data.set_position(0);
     {
-        let mut decoder = Decoder::<_, TiffKindStandard>::new(data).unwrap();
+        let mut decoder = TiffDecoder::new(data).unwrap();
 
         // Check the RGB image
         assert_eq!(

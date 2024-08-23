@@ -1,8 +1,8 @@
 extern crate tiff;
 
-use tiff::decoder::{Decoder, DecodingResult};
+use tiff::decoder::DecodingResult;
 use tiff::ifd::Value;
-use tiff::{ColorType, TiffKindBig, TiffKindStandard};
+use tiff::{BigTiffDecoder, ColorType, TiffDecoder, TiffKindStandard};
 
 use std::fs::File;
 use std::io::{Cursor, Write};
@@ -15,8 +15,7 @@ macro_rules! test_image_sum {
         fn $name(file: &str, expected_type: ColorType, expected_sum: $sum_ty) {
             let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
             let img_file = File::open(path).expect("Cannot find test image!");
-            let mut decoder =
-                Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+            let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
             assert_eq!(decoder.colortype().unwrap(), expected_type);
             let img_res = decoder.read_image().unwrap();
 
@@ -46,7 +45,7 @@ test_image_sum!(test_image_sum_f64, F64, f64);
 fn test_image_color_type_unsupported(file: &str, expected_type: ColorType) {
     let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
     let img_file = File::open(path).expect("Cannot find test image!");
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+    let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
     assert_eq!(decoder.colortype().unwrap(), expected_type);
     assert!(match decoder.read_image() {
         Err(tiff::TiffError::UnsupportedError(
@@ -168,8 +167,7 @@ fn test_string_tags() {
     for filename in filenames.iter() {
         let path = PathBuf::from(TEST_IMAGE_DIR).join(filename);
         let img_file = File::open(path).expect("Cannot find test image!");
-        let mut decoder =
-            Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+        let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
         let software = decoder.get_tag(tiff::tags::Tag::Software).unwrap();
         match software {
             Value::Ascii(s) => assert_eq!(
@@ -193,7 +191,7 @@ fn test_decode_data() {
         }
     }
     let file = File::open("./tests/decodedata-rgb-3c-8b.tiff").unwrap();
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(file).unwrap();
+    let mut decoder = TiffDecoder::new(file).unwrap();
     assert_eq!(decoder.colortype().unwrap(), ColorType::RGB(8));
     assert_eq!(decoder.dimensions().unwrap(), (100, 100));
     if let DecodingResult::U8(img_res) = decoder.read_image().unwrap() {
@@ -214,7 +212,7 @@ fn issue_69() {
 //fn test_gray_alpha_u8()
 //{
 //let img_file = File::open("./tests/images/minisblack-2c-8b-alpha.tiff").expect("Cannot find test image!");
-//let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+//let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
 //assert_eq!(decoder.colortype().unwrap(), ColorType::GrayA(8));
 //let img_res = decoder.read_image();
 //assert!(img_res.is_ok());
@@ -272,7 +270,7 @@ fn test_tiled_incremental() {
 
     let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
     let img_file = File::open(path).expect("Cannot find test image!");
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+    let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
     assert_eq!(decoder.colortype().unwrap(), expected_type);
 
     let tiles = decoder.tile_count().unwrap();
@@ -297,7 +295,7 @@ fn test_planar_rgb_u8() {
 
     let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
     let img_file = File::open(path).expect("Cannot find test image!");
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+    let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
     assert_eq!(decoder.colortype().unwrap(), expected_type);
 
     let chunks = decoder.strip_count().unwrap();
@@ -343,8 +341,7 @@ fn test_div_zero() {
         178, 178, 178,
     ];
 
-    let err = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let err = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 
     match err {
         TiffError::FormatError(TiffFormatError::StripTileTagConflict) => {}
@@ -362,8 +359,7 @@ fn test_too_many_value_bytes() {
         0, 89, 89, 89, 89, 89, 89, 89, 89, 96, 1, 20, 89, 89, 89, 89, 18,
     ];
 
-    let error =
-        tiff::decoder::Decoder::<_, TiffKindBig>::new(std::io::Cursor::new(&image)).unwrap_err();
+    let error = BigTiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 
     match error {
         tiff::TiffError::LimitsExceeded => {}
@@ -381,8 +377,7 @@ fn fuzzer_testcase5() {
         178, 178, 178,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -395,8 +390,7 @@ fn fuzzer_testcase1() {
         178,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -409,8 +403,7 @@ fn fuzzer_testcase6() {
         178, 178,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -422,8 +415,7 @@ fn oom() {
         0, 0, 0, 40, 0, 0, 0, 23, 1, 4, 0, 1, 0, 0, 0, 178, 48, 178, 178, 178, 178, 162, 178,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -435,8 +427,7 @@ fn fuzzer_testcase4() {
         0, 0, 0, 40, 0, 0, 0, 23, 1, 4, 0, 1, 0, 0, 0, 48, 178, 178, 178, 0, 1, 0, 13, 13,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -452,8 +443,7 @@ fn fuzzer_testcase2() {
         73,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -469,8 +459,7 @@ fn invalid_jpeg_tag_2() {
         0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 36, 73, 73, 0, 42, 36, 36, 36, 36, 0, 0, 8, 0,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -483,8 +472,7 @@ fn fuzzer_testcase3() {
         255, 255,
     ];
 
-    let _ = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let _ = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 }
 
 #[test]
@@ -502,8 +490,7 @@ fn timeout() {
         0, 0, 73, 73, 42, 0, 8, 0, 0, 0, 0, 0, 32,
     ];
 
-    let error = tiff::decoder::Decoder::<_, TiffKindStandard>::new(std::io::Cursor::new(&image))
-        .unwrap_err();
+    let error = TiffDecoder::new(std::io::Cursor::new(&image)).unwrap_err();
 
     match error {
         TiffError::FormatError(TiffFormatError::CycleInOffsets) => {}
@@ -530,7 +517,7 @@ fn test_predictor_3_gray_f32() {
 fn test_exif_decoding() {
     let path = PathBuf::from(TEST_IMAGE_DIR).join("exif.tif");
     let img_file = File::open(path).expect("Cannot find test image!");
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+    let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
     let raw_exif = decoder
         .read_exif::<TiffKindStandard>()
         .expect("Unable to read Exif data");
@@ -549,7 +536,7 @@ extern crate exif;
 fn test_exif_parsing() {
     let path = PathBuf::from(TEST_IMAGE_DIR).join("exif.tif");
     let img_file = File::open(path).expect("Cannot find test image!");
-    let mut decoder = Decoder::<_, TiffKindStandard>::new(img_file).expect("Cannot create decoder");
+    let mut decoder = TiffDecoder::new(img_file).expect("Cannot create decoder");
     let raw_exif = decoder
         .read_exif::<TiffKindStandard>()
         .expect("Unable to read Exif data");
