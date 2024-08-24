@@ -13,7 +13,7 @@ use crate::{
     error::TiffResult,
     ifd::{BufferedEntry, Directory},
     tags::{CompressionMethod, ResolutionUnit, Tag, EXIF_TAGS},
-    TiffError, TiffFormatError, TiffKind,
+    TiffError, TiffFormatError, TiffKind, TiffKindBig, TiffKindStandard,
 };
 
 pub mod colortype;
@@ -24,6 +24,9 @@ mod writer;
 use self::colortype::*;
 use self::compression::*;
 pub use self::writer::*;
+
+pub type TiffEncoder<W> = GenericTiffEncoder<W, TiffKindStandard>;
+pub type BigTiffEncoder<W> = GenericTiffEncoder<W, TiffKindBig>;
 
 /// Encoder for Tiff and BigTiff files.
 ///

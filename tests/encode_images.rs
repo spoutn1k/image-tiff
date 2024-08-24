@@ -4,8 +4,9 @@ use tiff::decoder::DecodingResult;
 use tiff::encoder::{colortype, Ifd, Ifd8, SRational};
 use tiff::tags::Tag;
 use tiff::{
-    ifd, BigTiffDecoder, BigTiffEncoder, ColorType, TiffDecoder, TiffEncoder, TiffKind,
-    TiffKindBig, TiffKindStandard,
+    decoder::{BigTiffDecoder, TiffDecoder},
+    encoder::{BigTiffEncoder, TiffEncoder},
+    ifd, ColorType, TiffKindStandard,
 };
 
 use std::fs::File;

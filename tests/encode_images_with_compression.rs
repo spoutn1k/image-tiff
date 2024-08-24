@@ -2,13 +2,13 @@ extern crate tiff;
 
 use std::io::{Cursor, Seek, Write};
 use tiff::{
-    decoder::DecodingResult,
+    decoder::{DecodingResult, TiffDecoder},
+    encoder::TiffEncoder,
     encoder::{
         colortype::{self, ColorType},
         compression::*,
         TiffValue,
     },
-    TiffDecoder, TiffEncoder, TiffKindStandard,
 };
 
 trait TestImage<const NUM_CHANNELS: usize>: From<Vec<<Self::Color as ColorType>::Inner>> {

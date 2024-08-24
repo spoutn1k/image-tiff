@@ -2,7 +2,10 @@ extern crate tiff;
 
 use tiff::decoder::DecodingResult;
 use tiff::ifd::Value;
-use tiff::{BigTiffDecoder, ColorType, TiffDecoder, TiffKindStandard};
+use tiff::{
+    decoder::{BigTiffDecoder, TiffDecoder},
+    ColorType, TiffKindStandard,
+};
 
 use std::fs::File;
 use std::io::{Cursor, Write};

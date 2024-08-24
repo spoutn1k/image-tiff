@@ -20,12 +20,6 @@ mod tiff_kind;
 pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
 pub use tiff_kind::*;
 
-pub type TiffEncoder<W> = encoder::GenericTiffEncoder<W, TiffKindStandard>;
-pub type BigTiffEncoder<W> = encoder::GenericTiffEncoder<W, TiffKindBig>;
-
-pub type TiffDecoder<W> = decoder::GenericTiffDecoder<W, TiffKindStandard>;
-pub type BigTiffDecoder<W> = decoder::GenericTiffDecoder<W, TiffKindBig>;
-
 /// An enumeration over supported color types and their bit depths
 #[derive(Copy, PartialEq, Eq, Debug, Clone, Hash)]
 pub enum ColorType {

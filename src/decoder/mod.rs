@@ -4,8 +4,8 @@ use std::io::{self, Cursor, Read, Seek, Write};
 
 use crate::encoder::{DirectoryEncoder, GenericTiffEncoder};
 use crate::{
-    bytecast, ColorType, TiffError, TiffFormatError, TiffKind, TiffResult, TiffUnsupportedError,
-    UsageError,
+    bytecast, ColorType, TiffError, TiffFormatError, TiffKind, TiffKindBig, TiffKindStandard,
+    TiffResult, TiffUnsupportedError, UsageError,
 };
 
 use self::decoded_entry::DecodedEntry;
@@ -17,6 +17,9 @@ use crate::tags::{
 };
 
 use self::stream::{ByteOrder, EndianReader, SmartReader};
+
+pub type TiffDecoder<W> = GenericTiffDecoder<W, TiffKindStandard>;
+pub type BigTiffDecoder<W> = GenericTiffDecoder<W, TiffKindBig>;
 
 mod decoded_entry;
 mod image;

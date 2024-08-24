@@ -1,6 +1,10 @@
 extern crate tiff;
 
-use tiff::{decoder::DecodingResult, tags::Tag, ColorType, TiffDecoder};
+use tiff::{
+    decoder::{DecodingResult, TiffDecoder},
+    tags::Tag,
+    ColorType,
+};
 
 use std::fs::File;
 use std::path::PathBuf;

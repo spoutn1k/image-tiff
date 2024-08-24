@@ -1,6 +1,6 @@
 extern crate tiff;
 
-use tiff::{tags::Tag, BigTiffDecoder, ColorType};
+use tiff::{decoder::BigTiffDecoder, tags::Tag, ColorType};
 
 use std::fs::File;
 use std::path::PathBuf;

@@ -1,7 +1,7 @@
 extern crate exif;
 extern crate tiff;
 
-use tiff::{tags::Tag, TiffDecoder};
+use tiff::{decoder::TiffDecoder, tags::Tag};
 
 use clap::Parser;
 use std::fs::File;
