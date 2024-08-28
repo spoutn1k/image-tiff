@@ -10,10 +10,10 @@ use crate::{
 
 use self::decoded_entry::DecodedEntry;
 use self::image::Image;
-use crate::ifd::{BufferedEntry, Directory, Value};
+use crate::ifd::{BufferedEntry, Directory, ImageFileDirectory, Value};
 use crate::tags::{
-    CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat,
-    Tag, Type, EXIF_TAGS,
+    CompressionMethod, GpsTag, PhotometricInterpretation, PlanarConfiguration, Predictor,
+    SampleFormat, Tag, Type, EXIF_TAGS,
 };
 
 use self::stream::{ByteOrder, EndianReader, SmartReader};
@@ -1146,6 +1146,17 @@ impl<R: Read + Seek, K: TiffKind> GenericTiffDecoder<R, K> {
         }
 
         Ok(ifd)
+    }
+
+    pub fn get_gps_ifd(&mut self) -> TiffResult<ImageFileDirectory<GpsTag, BufferedEntry>> {
+        let ifd = self.get_exif_ifd(Tag::GpsIfd)?;
+
+        let mut gps_ifd = ImageFileDirectory::<GpsTag, BufferedEntry>::new();
+        ifd.into_iter().for_each(|(t, e)| {
+            gps_ifd.insert(GpsTag::from_u16(t.to_u16()).unwrap(), e);
+        });
+
+        Ok(gps_ifd)
     }
 
     /// Extracts the EXIF metadata (if present) and returns it in a light TIFF format
