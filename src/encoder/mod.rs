@@ -12,7 +12,7 @@ use crate::{
     decoder::GenericTiffDecoder,
     error::TiffResult,
     ifd::{BufferedEntry, Directory},
-    tags::{CompressionMethod, ResolutionUnit, Tag, EXIF_TAGS},
+    tags::{CompressionMethod, ResolutionUnit, Tag},
     TiffError, TiffFormatError, TiffKind, TiffKindBig, TiffKindStandard,
 };
 
@@ -522,15 +522,11 @@ impl<'a, W: 'a + Write + Seek, T: ColorType, K: TiffKind, D: Compression>
     pub fn exif_tags<F: TiffKind>(&mut self, source: Vec<u8>) -> TiffResult<()> {
         let mut decoder = GenericTiffDecoder::<_, F>::new(Cursor::new(source))?;
 
-        // copy Exif tags to main IFD
-        let exif_tags = EXIF_TAGS;
-        exif_tags.into_iter().for_each(|tag| {
-            let entry = decoder.find_tag_entry(tag);
-            if entry.is_some() && !self.encoder.ifd.contains_key(&tag) {
-                let b_entry = entry.unwrap().as_buffered(decoder.inner()).unwrap();
-                self.encoder.write_tag(tag, b_entry).unwrap();
+        for (t, e) in decoder.get_exif_data()?.into_iter() {
+            if !self.encoder.ifd.contains_key(&t) {
+                self.encoder.write_tag(t, e).unwrap();
             }
-        });
+        }
 
         // copy sub-ifds
         self.copy_ifd(Tag::ExifIfd, &mut decoder)?;
