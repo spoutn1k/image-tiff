@@ -245,6 +245,19 @@ pub enum Type(u16) {
 }
 }
 
+impl Type {
+    /// Returns the size of the type in bytes.
+    pub fn size(&self) -> usize {
+        match self {
+            Type::BYTE | Type::ASCII | Type::SBYTE | Type::UNDEFINED => 1,
+            Type::SHORT | Type::SSHORT => 2,
+            Type::LONG | Type::SLONG | Type::FLOAT | Type::IFD => 4,
+            Type::RATIONAL | Type::SRATIONAL | Type::DOUBLE => 8,
+            Type::LONG8 | Type::SLONG8 | Type::IFD8 => 8,
+        }
+    }
+}
+
 tags! {
 /// See [TIFF compression tags](https://www.awaresystems.be/imaging/tiff/tifftags/compression.html)
 /// for reference.

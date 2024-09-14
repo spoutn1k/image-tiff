@@ -398,17 +398,7 @@ impl TiffValue for BufferedEntry {
     }
 
     fn bytes(&self) -> usize {
-        let tag_size: u32 = match self.type_ {
-            Type::BYTE | Type::SBYTE | Type::ASCII | Type::UNDEFINED => 1,
-            Type::SHORT | Type::SSHORT => 2,
-            Type::LONG | Type::SLONG | Type::FLOAT | Type::IFD => 4,
-            Type::LONG8
-            | Type::SLONG8
-            | Type::DOUBLE
-            | Type::RATIONAL
-            | Type::SRATIONAL
-            | Type::IFD8 => 8,
-        };
+        let tag_size = self.type_.size() as u32;
 
         match self.count.checked_mul(tag_size.into()) {
             Some(n) => n.try_into().unwrap(),
@@ -489,13 +479,19 @@ impl From<BufferedEntry> for ProcessedEntry {
     }
 }
 
+impl From<ProcessedEntry> for BufferedEntry {
+    fn from(pe: ProcessedEntry) -> Self {
+        Self {
+            type_: pe.kind(),
+            count: pe.count() as u64,
+            data: pe.data(),
+        }
+    }
+}
+
 impl ProcessedEntry {
     pub fn iter(&self) -> std::slice::Iter<'_, Value> {
         self.0.iter()
-    }
-
-    pub fn count(&self) -> usize {
-        self.0.len()
     }
 
     pub fn kind(&self) -> Type {
@@ -522,6 +518,52 @@ impl ProcessedEntry {
             },
             None => Type::UNDEFINED,
         }
+    }
+
+    pub fn count(&self) -> usize {
+        self.0.len()
+    }
+
+    fn data(&self) -> Vec<u8> {
+        let mut data = Vec::with_capacity(self.count() * self.kind().size());
+
+        for v in &self.0 {
+            match v {
+                Value::Byte(e) => data.push(*e),
+                Value::Short(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::SignedByte(e) => data.push(*e as u8),
+                Value::SignedShort(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::Signed(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::SignedBig(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::Unsigned(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::UnsignedBig(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::Float(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::Double(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::List(_) => todo!(),
+                Value::Rational(n, d) => {
+                    data.extend_from_slice(&n.to_ne_bytes());
+                    data.extend_from_slice(&d.to_ne_bytes());
+                }
+                Value::RationalBig(n, d) => {
+                    data.extend_from_slice(&n.to_ne_bytes());
+                    data.extend_from_slice(&d.to_ne_bytes());
+                }
+                Value::SRational(n, d) => {
+                    data.extend_from_slice(&n.to_ne_bytes());
+                    data.extend_from_slice(&d.to_ne_bytes());
+                }
+                Value::SRationalBig(n, d) => {
+                    data.extend_from_slice(&n.to_ne_bytes());
+                    data.extend_from_slice(&d.to_ne_bytes());
+                }
+                Value::Ascii(e) => data.extend_from_slice(e.as_bytes()),
+                Value::Ifd(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::IfdBig(e) => data.extend_from_slice(&e.to_ne_bytes()),
+                Value::Undefined(e) => data.push(*e),
+            }
+        }
+
+        data
     }
 }
 
