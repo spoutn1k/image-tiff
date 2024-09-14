@@ -373,7 +373,7 @@ impl<'a, W: 'a + Write + Seek, T: ColorType, K: TiffKind, D: Compression>
         let mut decoder = GenericTiffDecoder::<_, F>::new(Cursor::new(source))?;
 
         for (t, e) in decoder.get_exif_data()?.into_iter() {
-            if !self.encoder.ifd.contains_key(&t) {
+            if !self.encoder.contains(&t) {
                 self.encoder.write_tag(t, e)?;
             }
         }

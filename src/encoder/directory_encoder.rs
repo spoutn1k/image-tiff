@@ -1,7 +1,7 @@
 use crate::{
     encoder::{TiffValue, TiffWriter},
     error::{TiffError, TiffResult, UsageError},
-    ifd::{BufferedEntry, Directory, ImageFileDirectory},
+    ifd::{BufferedEntry, ImageFileDirectory},
     tags::Tag,
     TiffKind,
 };
@@ -19,8 +19,8 @@ pub struct DirectoryEncoder<'a, W: 'a + Write + Seek, K: TiffKind> {
     pub writer: &'a mut TiffWriter<W>,
     dropped: bool,
     ifd_pointer_pos: u64,
-    pub ifd: Directory<BufferedEntry>,
-    sub_ifd: Option<Directory<BufferedEntry>>,
+    ifd: ImageFileDirectory<u16, BufferedEntry>,
+    sub_ifd: Option<ImageFileDirectory<u16, BufferedEntry>>,
     _phantom: PhantomData<K>,
 }
 
@@ -33,15 +33,19 @@ impl<'a, W: 'a + Write + Seek, K: TiffKind> DirectoryEncoder<'a, W, K> {
             writer,
             dropped: false,
             ifd_pointer_pos,
-            ifd: Directory::new(),
+            ifd: ImageFileDirectory::new(),
             sub_ifd: None,
             _phantom: ::std::marker::PhantomData,
         })
     }
 
+    pub fn contains(&self, tag: &Tag) -> bool {
+        self.ifd.contains_key(&(*tag).into())
+    }
+
     /// Start writing to sub-IFD
     pub fn subdirectory_start(&mut self) {
-        self.sub_ifd = Some(Directory::new());
+        self.sub_ifd = Some(ImageFileDirectory::new());
     }
 
     /// Stop writing to sub-IFD and resume master IFD, returns offset of sub-IFD
@@ -72,7 +76,7 @@ impl<'a, W: 'a + Write + Seek, K: TiffKind> DirectoryEncoder<'a, W, K> {
         };
 
         active_ifd.insert(
-            tag,
+            tag.into(),
             BufferedEntry {
                 type_: value.is_type(),
                 count: value.count().try_into()?,

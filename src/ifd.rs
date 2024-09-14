@@ -574,12 +574,12 @@ impl ProcessedEntry {
 
 /// Type representing an Image File Directory
 #[derive(Debug, Clone)]
-pub struct ImageFileDirectory<T: Ord, E>(BTreeMap<T, E>);
+pub struct ImageFileDirectory<T: Ord + Into<u16>, E>(BTreeMap<T, E>);
 pub type Directory<E> = ImageFileDirectory<Tag, E>;
 
 impl<T, E> Default for ImageFileDirectory<T, E>
 where
-    T: Ord,
+    T: Ord + Into<u16>,
 {
     fn default() -> Self {
         ImageFileDirectory(BTreeMap::new())
@@ -588,7 +588,7 @@ where
 
 impl<T, E> ImageFileDirectory<T, E>
 where
-    T: Ord,
+    T: Ord + Into<u16>,
 {
     pub fn new() -> Self {
         ImageFileDirectory(BTreeMap::new())
@@ -629,7 +629,7 @@ where
 
 impl<T, E, K> FromIterator<(T, K)> for ImageFileDirectory<T, E>
 where
-    T: Ord,
+    T: Ord + Into<u16>,
     K: Into<E>,
 {
     fn from_iter<I: IntoIterator<Item = (T, K)>>(iter: I) -> Self {
@@ -639,7 +639,7 @@ where
 
 impl<T> std::fmt::Display for ImageFileDirectory<T, ProcessedEntry>
 where
-    T: DispatchFormat + Ord + std::fmt::Display,
+    T: DispatchFormat + Ord + std::fmt::Display + Into<u16>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut refs = self.iter().collect::<Vec<(&T, &ProcessedEntry)>>();
