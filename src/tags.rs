@@ -49,6 +49,7 @@ macro_rules! tags {
 
         tags!($name, $ty, $($unknown_doc)*);
     };
+
     // For u16 tags, provide direct inherent primitive conversion methods.
     ($name:tt, u16, $($unknown_doc:literal)*) => {
         impl $name {
@@ -110,7 +111,12 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     Orientation = 274, // TODO add support
     PhotometricInterpretation = 262,
     PlanarConfiguration = 284,
+    PageName = 0x11d,
     ResolutionUnit = 296, // TODO add support
+    PageNumber = 0x129,
+    Predictor = 0x13d,
+    WhitePoint = 0x13e,
+    PrimaryChromacities = 0x13f,
     RowsPerStrip = 278,
     SamplesPerPixel = 277,
     Software = 305,
@@ -121,7 +127,6 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     XResolution = 282,
     YResolution = 283,
     // Advanced tags
-    Predictor = 317,
     TileWidth = 322,
     TileLength = 323,
     TileOffsets = 324,
@@ -132,6 +137,7 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     SMaxSampleValue = 341, // TODO add support
     // JPEG
     JPEGTables = 347,
+    ApplicationNotes = 0x2bc,
     // GeoTIFF
     ModelPixelScaleTag = 33550, // (SoftDesk)
     ModelTransformationTag = 34264, // (JPL Carto Group)
@@ -140,16 +146,22 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     GeoDoubleParamsTag = 34736, // (SPOT)
     GeoAsciiParamsTag = 34737, // (SPOT)
     Copyright = 0x8298,
+    ExposureTime = 0x829a,
+    FNumber = 0x829b,
     ExifIfd = 0x8769,
     GpsIfd = 0x8825,
     ISO = 0x8827,
+    ICCProfile = 0x8773,
     ExifVersion = 0x9000,
     DateTimeOriginal = 0x9003,
     CreateDate = 0x9004,
     ComponentsConfiguration = 0x9101,
+    ExposureCompensation = 0x9204,
+    FocalLength = 0x920a,
     UserComment = 0x9286,
     GdalNodata = 42113, // Contains areas with missing data
-    FlaspixVersion = 0xa000,
+    FlashpixVersion = 0xa000,
+    ColorSpace = 0xa001,
     InteropIfd = 0xa005,
 }
 }
@@ -295,6 +307,16 @@ pub enum SampleFormat(u16) unknown("An unknown extension sample format") {
 }
 }
 
+tags! {
+pub enum ColorSpace(u16) unknown("An unknown colorspace") {
+    sRGB = 1,
+    AdobeRGB = 2,
+    WideGamutRGB = 0xfffd,
+    ICCProfile = 0xfffe,
+    Uncalibrated = 0xffff,
+}
+}
+
 pub trait DispatchFormat {
     fn format(&self, e: &Value) -> String;
 }
@@ -319,6 +341,9 @@ impl DispatchFormat for Tag {
             }
             (Tag::SampleFormat, Value::Short(c)) => {
                 format!("{}", SampleFormat::from_u16_exhaustive(*c))
+            }
+            (Tag::ColorSpace, Value::Short(c)) => {
+                format!("{}", ColorSpace::from_u16_exhaustive(*c))
             }
             (_, value) => format!("{value}"),
         }
