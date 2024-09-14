@@ -1,4 +1,5 @@
-use crate::ifd::Value;
+use crate::ifd::ProcessedEntry;
+use itertools::Itertools;
 
 macro_rules! tags {
     {
@@ -157,6 +158,7 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     CreateDate = 0x9004,
     ComponentsConfiguration = 0x9101,
     ExposureCompensation = 0x9204,
+    MeteringMode = 0x9207,
     FocalLength = 0x920a,
     UserComment = 0x9286,
     GdalNodata = 42113, // Contains areas with missing data
@@ -309,7 +311,7 @@ pub enum SampleFormat(u16) unknown("An unknown extension sample format") {
 
 tags! {
 pub enum ColorSpace(u16) unknown("An unknown colorspace") {
-    sRGB = 1,
+    SRGB = 1,
     AdobeRGB = 2,
     WideGamutRGB = 0xfffd,
     ICCProfile = 0xfffe,
@@ -317,43 +319,80 @@ pub enum ColorSpace(u16) unknown("An unknown colorspace") {
 }
 }
 
+tags! {
+pub enum MeteringMode(u16) unknown("An unknown metering mode") {
+    Average = 1,
+    CenterWeightedAverage = 2,
+    Spot = 3,
+    MultiSpot = 4,
+    MultiSegment = 5,
+    Partial = 6,
+    Other = 255,
+}
+}
+
+tags! {
+pub enum Orientation(u16) unknown("An unknown orientation") {
+    Horizontal = 1,
+    MirrorHorizontal = 2,
+    Rotated180 = 3,
+    MirrorVertical = 4,
+    MirrorHorizontalRotated270CW = 5,
+    Rotated90CW = 6,
+    MirrorHorizontalRotated90CW = 7,
+    Rotated270CW = 8,
+}
+}
+
 pub trait DispatchFormat {
-    fn format(&self, e: &Value) -> String;
+    fn format(&self, e: &ProcessedEntry) -> String;
+}
+
+macro_rules! intercept_u16 {
+    ($slice:expr, $target:ty) => {
+        $slice
+            .iter()
+            .filter_map(|v| v.clone().into_u16().ok())
+            .map(|c| <$target>::from_u16_exhaustive(c).to_string())
+            .join(", ")
+    };
 }
 
 impl DispatchFormat for Tag {
-    fn format(&self, e: &Value) -> String {
-        match (self, e) {
-            (Tag::Compression, Value::Short(c)) => {
-                format!("{}", CompressionMethod::from_u16_exhaustive(*c))
+    fn format(&self, e: &ProcessedEntry) -> String {
+        match (self, e.kind()) {
+            (Tag::Orientation, Type::SHORT) => intercept_u16!(e, Orientation),
+            (Tag::Compression, Type::SHORT) => intercept_u16!(e, CompressionMethod),
+            (Tag::PhotometricInterpretation, Type::SHORT) => {
+                intercept_u16!(e, PhotometricInterpretation)
             }
-            (Tag::PhotometricInterpretation, Value::Short(c)) => {
-                format!("{}", PhotometricInterpretation::from_u16_exhaustive(*c))
-            }
-            (Tag::PlanarConfiguration, Value::Short(c)) => {
-                format!("{}", PlanarConfiguration::from_u16_exhaustive(*c))
-            }
-            (Tag::Predictor, Value::Short(c)) => {
-                format!("{}", Predictor::from_u16_exhaustive(*c))
-            }
-            (Tag::ResolutionUnit, Value::Short(c)) => {
-                format!("{}", ResolutionUnit::from_u16_exhaustive(*c))
-            }
-            (Tag::SampleFormat, Value::Short(c)) => {
-                format!("{}", SampleFormat::from_u16_exhaustive(*c))
-            }
-            (Tag::ColorSpace, Value::Short(c)) => {
-                format!("{}", ColorSpace::from_u16_exhaustive(*c))
-            }
-            (_, value) => format!("{value}"),
+            (Tag::PlanarConfiguration, Type::SHORT) => intercept_u16!(e, PlanarConfiguration),
+            (Tag::Predictor, Type::SHORT) => intercept_u16!(e, Predictor),
+            (Tag::ResolutionUnit, Type::SHORT) => intercept_u16!(e, ResolutionUnit),
+            (Tag::SampleFormat, Type::SHORT) => intercept_u16!(e, SampleFormat),
+            (Tag::ColorSpace, Type::SHORT) => intercept_u16!(e, ColorSpace),
+            (Tag::MeteringMode, Type::SHORT) => intercept_u16!(e, MeteringMode),
+            (_, _) => e.iter().map(|v| format!("{v}")).join(", "),
         }
     }
 }
 
+fn format_coords(e: &ProcessedEntry) -> String {
+    let mut iter = e.iter();
+    format!(
+        "{} deg {}' {:.2}\"",
+        iter.next().unwrap().clone().into_f32().unwrap_or_default(),
+        iter.next().unwrap().clone().into_f32().unwrap_or_default(),
+        iter.next().unwrap().clone().into_f32().unwrap_or_default(),
+    )
+}
+
 impl DispatchFormat for GpsTag {
-    fn format(&self, e: &Value) -> String {
-        match (self, e) {
-            (_, value) => format!("{value}"),
+    fn format(&self, e: &ProcessedEntry) -> String {
+        match (self, e.kind()) {
+            (GpsTag::GPSLatitude, Type::RATIONAL) if e.count() == 3 => format_coords(e),
+            (GpsTag::GPSLongitude, Type::RATIONAL) if e.count() == 3 => format_coords(e),
+            (_, _) => e.iter().map(|v| format!("{v}")).join(", "),
         }
     }
 }

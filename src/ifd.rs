@@ -172,6 +172,8 @@ impl Value {
     pub fn into_f32(self) -> TiffResult<f32> {
         match self {
             Float(val) => Ok(val),
+            Rational(num, den) => Ok(num as f32 / den as f32),
+            SRational(num, den) => Ok(num as f32 / den as f32),
             val => Err(TiffError::FormatError(
                 TiffFormatError::SignedIntegerExpected(val),
             )),
@@ -180,6 +182,9 @@ impl Value {
 
     pub fn into_f64(self) -> TiffResult<f64> {
         match self {
+            Float(val) => Ok(val as f64),
+            Rational(num, den) => Ok(num as f64 / den as f64),
+            SRational(num, den) => Ok(num as f64 / den as f64),
             Double(val) => Ok(val),
             val => Err(TiffError::FormatError(
                 TiffFormatError::SignedIntegerExpected(val),
@@ -484,6 +489,42 @@ impl From<BufferedEntry> for ProcessedEntry {
     }
 }
 
+impl ProcessedEntry {
+    pub fn iter(&self) -> std::slice::Iter<'_, Value> {
+        self.0.iter()
+    }
+
+    pub fn count(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn kind(&self) -> Type {
+        match self.0.first() {
+            Some(v) => match v {
+                Value::Byte(_) => Type::BYTE,
+                Value::Short(_) => Type::SHORT,
+                Value::SignedByte(_) => Type::SBYTE,
+                Value::SignedShort(_) => Type::SSHORT,
+                Value::Signed(_) => Type::SLONG,
+                Value::SignedBig(_) => Type::SLONG8,
+                Value::Unsigned(_) => Type::LONG,
+                Value::UnsignedBig(_) => Type::LONG8,
+                Value::Float(_) => Type::FLOAT,
+                Value::Double(_) => Type::DOUBLE,
+                Value::List(_) => Type::UNDEFINED,
+                Value::Rational(_, _) => Type::RATIONAL,
+                Value::SRational(_, _) => Type::SRATIONAL,
+                Value::Ascii(_) => Type::ASCII,
+                Value::Ifd(_) => Type::IFD,
+                Value::IfdBig(_) => Type::IFD8,
+                Value::Undefined(_) => Type::UNDEFINED,
+                Value::RationalBig(_, _) | Value::SRationalBig(_, _) => unreachable!(),
+            },
+            None => Type::UNDEFINED,
+        }
+    }
+}
+
 /// Type representing an Image File Directory
 #[derive(Debug, Clone)]
 pub struct ImageFileDirectory<T: Ord, E>(BTreeMap<T, E>);
@@ -558,9 +599,7 @@ where
         refs.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 
         for (tag, entry) in refs {
-            let entry: String = entry.0.iter().map(|v| tag.format(v)).join(", ");
-
-            writeln!(f, "{tag}: {entry}")?;
+            writeln!(f, "{tag}: {}", tag.format(&entry))?;
         }
 
         Ok(())
