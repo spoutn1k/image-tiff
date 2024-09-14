@@ -10,14 +10,14 @@ pub use self::writer::*;
 use crate::{
     decoder::GenericTiffDecoder,
     error::TiffResult,
+    ifd::Directory,
     tags::{CompressionMethod, ResolutionUnit, Tag},
     TiffError, TiffFormatError, TiffKind, TiffKindBig, TiffKindStandard,
 };
 pub use directory_encoder::DirectoryEncoder;
-use std::io::{Cursor, Read};
 use std::{
     cmp,
-    io::{self, Seek, Write},
+    io::{self, Cursor, Read, Seek, Write},
     marker::PhantomData,
 };
 pub use tiff_value::*;
@@ -356,6 +356,18 @@ impl<'a, W: 'a + Write + Seek, T: ColorType, K: TiffKind, D: Compression>
         self.encoder.write_tag(Tag::YResolution, value).unwrap();
     }
 
+    pub fn set_exif_tag<E: TiffValue>(&mut self, tag: Tag, value: E) -> TiffResult<()> {
+        self.encoder.write_tag(tag, value)
+    }
+
+    pub fn set_exif_tags<E: TiffValue>(&mut self, ifd: Directory<E>) -> TiffResult<()> {
+        for (tag, value) in ifd.into_iter() {
+            self.encoder.write_tag(tag, value)?;
+        }
+
+        Ok(())
+    }
+
     /// Write Exif data from TIFF encoded byte block
     pub fn exif_tags<F: TiffKind>(&mut self, source: Vec<u8>) -> TiffResult<()> {
         let mut decoder = GenericTiffDecoder::<_, F>::new(Cursor::new(source))?;
@@ -395,7 +407,7 @@ impl<'a, W: 'a + Write + Seek, T: ColorType, K: TiffKind, D: Compression>
             });
 
             // return to ifd0 and write offset
-            let ifd_offset = self.encoder.subirectory_close()?;
+            let ifd_offset = self.encoder.subdirectory_close()?;
             self.encoder.write_tag(tag, ifd_offset as u32)?;
         }
 

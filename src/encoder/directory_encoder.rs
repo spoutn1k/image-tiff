@@ -1,7 +1,7 @@
 use crate::{
     encoder::{TiffValue, TiffWriter},
-    error::TiffResult,
-    ifd::{BufferedEntry, Directory},
+    error::{TiffError, TiffResult, UsageError},
+    ifd::{BufferedEntry, Directory, ImageFileDirectory},
     tags::Tag,
     TiffKind,
 };
@@ -45,10 +45,16 @@ impl<'a, W: 'a + Write + Seek, K: TiffKind> DirectoryEncoder<'a, W, K> {
     }
 
     /// Stop writing to sub-IFD and resume master IFD, returns offset of sub-IFD
-    pub fn subirectory_close(&mut self) -> TiffResult<u64> {
-        let offset = self.write_directory()?;
-        K::write_offset(self.writer, 0)?;
+    pub fn subdirectory_close(&mut self) -> TiffResult<u64> {
+        let ifd = self
+            .sub_ifd
+            .to_owned()
+            .ok_or(TiffError::UsageError(UsageError::CloseNonExistentIfd))?;
         self.sub_ifd = None;
+
+        let offset = self.write_directory(ifd)?;
+        K::write_offset(self.writer, 0)?;
+
         Ok(offset)
     }
 
@@ -77,52 +83,57 @@ impl<'a, W: 'a + Write + Seek, K: TiffKind> DirectoryEncoder<'a, W, K> {
         Ok(())
     }
 
-    fn write_directory(&mut self) -> TiffResult<u64> {
-        let active_ifd = match &self.sub_ifd {
-            None => &mut self.ifd,
-            Some(_v) => self.sub_ifd.as_mut().unwrap(),
-        };
-
+    fn write_directory<T: Ord + Into<u16>>(
+        &mut self,
+        mut ifd: ImageFileDirectory<T, BufferedEntry>,
+    ) -> TiffResult<u64> {
         // Start by writing out all values
         for &mut BufferedEntry {
             data: ref mut bytes,
             ..
-        } in active_ifd.values_mut()
+        } in ifd.values_mut()
         {
+            // Amount of bytes available in the Tiff type
             let data_bytes = K::OffsetType::BYTE_LEN as usize;
 
             if bytes.len() > data_bytes {
+                // If the data does not fit in the entry
+                // Record the offset
                 let offset = self.writer.offset();
                 self.writer.write_bytes(bytes)?;
-                *bytes = vec![0; data_bytes];
-                let mut writer = TiffWriter::new(bytes as &mut [u8]);
-                K::write_offset(&mut writer, offset)?;
+                // Overwrite the data with a buffer matching the offset size
+                *bytes = vec![0; data_bytes]; // TODO Maybe just truncate ?
+                                              // Write the offset to the data
+                K::write_offset(&mut TiffWriter::new(bytes as &mut [u8]), offset)?;
             } else {
+                // Pad the data with zeros to the correct length
                 while bytes.len() < data_bytes {
                     bytes.push(0);
                 }
             }
         }
 
-        let offset = self.writer.offset();
+        // Record the offset
+        let ifd_offset = self.writer.offset();
 
-        K::write_entry_count(self.writer, active_ifd.len())?;
+        // Actually write the ifd
+        K::write_entry_count(self.writer, ifd.len())?;
         for (
             tag,
             BufferedEntry {
                 type_: field_type,
                 count,
-                data: offset,
+                data: offset, // At this point data is of size K::OffsetType::BYTE_LEN
             },
-        ) in active_ifd.iter()
+        ) in ifd.into_iter()
         {
-            self.writer.write_u16(tag.to_u16())?;
+            self.writer.write_u16(tag.into())?;
             self.writer.write_u16(field_type.to_u16())?;
-            K::convert_offset(*count)?.write(self.writer)?;
+            K::convert_offset(count)?.write(self.writer)?;
             self.writer.write_bytes(&offset)?;
         }
 
-        Ok(offset)
+        Ok(ifd_offset)
     }
 
     /// Write some data to the tiff file, the offset of the data is returned.
@@ -141,9 +152,10 @@ impl<'a, W: 'a + Write + Seek, K: TiffKind> DirectoryEncoder<'a, W, K> {
 
     pub fn finish_internal(&mut self) -> TiffResult<()> {
         if self.sub_ifd.is_some() {
-            self.subirectory_close()?;
+            self.subdirectory_close()?;
         }
-        let ifd_pointer = self.write_directory()?;
+
+        let ifd_pointer = self.write_directory(self.ifd.to_owned())?;
         let curr_pos = self.writer.offset();
 
         self.writer.goto_offset(self.ifd_pointer_pos)?;

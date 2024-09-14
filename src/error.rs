@@ -241,12 +241,14 @@ impl fmt::Display for TiffUnsupportedError {
 pub enum UsageError {
     InvalidChunkType(ChunkType, ChunkType),
     InvalidChunkIndex(u32),
+    CloseNonExistentIfd,
 }
 
 impl fmt::Display for UsageError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::UsageError::*;
         match *self {
+            CloseNonExistentIfd => write!(fmt, "Attempted to close a non-existent IFD"),
             InvalidChunkType(expected, actual) => {
                 write!(
                     fmt,
