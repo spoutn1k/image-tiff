@@ -2,27 +2,16 @@ use crate::tags::{PhotometricInterpretation, SampleFormat};
 
 macro_rules! integer_horizontal_predict {
     () => {
-        fn horizontal_predict(row: &[Self::Inner], result: &mut Vec<Self::Inner>) {
+        fn horizontal_predict(row: &[Self::Inner]) -> Vec<Self::Inner> {
             let sample_size = Self::SAMPLE_FORMAT.len();
-            if row.len() < sample_size {
-                debug_assert!(false);
-                return;
-            }
-            let (start, rest) = row.split_at(sample_size);
+            let mut result = Vec::with_capacity(row.len());
 
-            result.clear();
-            if result.capacity() - result.len() < row.len() {
-                return;
-            }
-            result.extend_from_slice(start);
-            if result.capacity() - result.len() < rest.len() {
-                return;
-            }
+            result.extend_from_slice(&row[0..=sample_size - 1]);
             result.extend(
-                row.into_iter()
-                    .zip(rest)
-                    .map(|(prev, current)| current.wrapping_sub(*prev)),
+                (sample_size..row.len()).map(|i| row[i].wrapping_sub(row[i - sample_size])),
             );
+
+            result
         }
     };
 }
@@ -38,7 +27,7 @@ pub trait ColorType {
     /// The value of the tiff tag `SampleFormat`
     const SAMPLE_FORMAT: &'static [SampleFormat];
 
-    fn horizontal_predict(row: &[Self::Inner], result: &mut Vec<Self::Inner>);
+    fn horizontal_predict(row: &[Self::Inner]) -> Vec<Self::Inner>;
 }
 
 pub struct Gray8;
@@ -108,7 +97,7 @@ impl ColorType for Gray32Float {
     const BITS_PER_SAMPLE: &'static [u16] = &[32];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP];
 
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -140,7 +129,7 @@ impl ColorType for Gray64Float {
     const BITS_PER_SAMPLE: &'static [u16] = &[64];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP];
 
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -181,7 +170,7 @@ impl ColorType for RGB32Float {
     const TIFF_VALUE: PhotometricInterpretation = PhotometricInterpretation::RGB;
     const BITS_PER_SAMPLE: &'static [u16] = &[32, 32, 32];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 3];
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -202,7 +191,7 @@ impl ColorType for RGB64Float {
     const TIFF_VALUE: PhotometricInterpretation = PhotometricInterpretation::RGB;
     const BITS_PER_SAMPLE: &'static [u16] = &[64, 64, 64];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 3];
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -243,7 +232,7 @@ impl ColorType for RGBA32Float {
     const TIFF_VALUE: PhotometricInterpretation = PhotometricInterpretation::RGB;
     const BITS_PER_SAMPLE: &'static [u16] = &[32, 32, 32, 32];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 4];
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -264,7 +253,7 @@ impl ColorType for RGBA64Float {
     const TIFF_VALUE: PhotometricInterpretation = PhotometricInterpretation::RGB;
     const BITS_PER_SAMPLE: &'static [u16] = &[64, 64, 64, 64];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 4];
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -306,7 +295,7 @@ impl ColorType for CMYK32Float {
     const BITS_PER_SAMPLE: &'static [u16] = &[32, 32, 32, 32];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 4];
 
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
@@ -328,7 +317,7 @@ impl ColorType for CMYK64Float {
     const BITS_PER_SAMPLE: &'static [u16] = &[64, 64, 64, 64];
     const SAMPLE_FORMAT: &'static [SampleFormat] = &[SampleFormat::IEEEFP; 4];
 
-    fn horizontal_predict(_: &[Self::Inner], _: &mut Vec<Self::Inner>) {
+    fn horizontal_predict(_: &[Self::Inner]) -> Vec<Self::Inner> {
         unreachable!()
     }
 }
